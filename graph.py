@@ -66,8 +66,9 @@ def q3(client):
     # """
     # save_q3(q, client)
     # Query results loaded to table /projects/w4111-project-2-225304/datasets/dataset/tables/GRAPH
-    # print("hello ")
-    q_see = """select * from dataset.GRAPH limit 5"""
+    # print("hello ")w4111-project-2-225304
+
+    q_see = """select * from `w4111-project-2-225304.dataset.GRAPH` limit 5"""
     job = client.query(q_see)
     results = job.result()
     return list(results)
@@ -79,7 +80,7 @@ def q4(client):
     with outdegree as (select scr, count(*) as cnt from dataset.GRAPH group by scr),
     indegree as (select dst, count(*) as cnt from dataset.GRAPH group by dst)
     select W1.twitter_username as max_indegree, W2.twitter_username as max_outdegree
-    from `w4111-columbia.graph.tweets` as W1, `w4111-columbia.graph.tweets` as W2, indegree, outdegree
+    from `w4111-columbia.graph.tweets` as W1 , `w4111-columbia.graph.tweets` as W2, indegree, outdegree
     where W1.twitter_username = indegree.dst and
     W2.twitter_username = outdegree.scr and
     indegree.cnt = (select max(cnt) from indegree) and
@@ -92,7 +93,26 @@ def q4(client):
 # SQL query for Question 5. You must edit this funtion.
 # This function should return a list containing value of the conditional probability.
 def q5(client):
-
+    q = """
+    with indegree as (select dst, count(*) as cnt from `w4111-project-2-225304.dataset.GRAPH` group by dst),
+    avg_likes as (select twitter_username, avg(like_num) as avg_like from `w4111-columbia.graph.tweets` group by twitter_username),
+    total_user  as (
+    select indegree.dst as twitter_username,
+           avg_likes.avg_like as avg_like,
+           indegree.cnt as cnt,
+           avg(cnt) over() as t_avg_cnt,
+           avg(avg_like) over() as t_avg_like
+    from indegree join avg_likes on indegree.dst = avg_likes.twitter_username),
+    unpopular_user as (select twitter_username
+    from total_user
+    where cnt < t_avg_cnt and avg_like < t_avg_like),
+    popular_user as (select twitter_username from total_user where cnt > t_avg_cnt and avg_like > t_avg_like),
+    unpopular_user_tweet as (select `w4111-project-2-225304.dataset.GRAPH`.dst as dst, `w4111-project-2-225304.dataset.GRAPH`.scr as scr
+                            from `w4111-project-2-225304.dataset.GRAPH` join unpopular_user on `w4111-project-2-225304.dataset.GRAPH`.dst = unpopular_user.twitter_username),
+    unpopular_popular_cnt as (select count(*) from unpopular_user_tweet join popular_user on popular_user.twitter_username = unpopular_user_tweet.scr),
+    total_cnt as (select count(*) from unpopular_user_tweet)
+    select (select * from unpopular_popular_cnt)/ (select * from total_cnt) as popular_unpopular
+    """
     job = client.query(q)
     results = job.result()
     return list(results)
@@ -100,8 +120,16 @@ def q5(client):
 # SQL query for Question 6. You must edit this funtion.
 # This function should return a list containing the value for the number of triangles in the graph.
 def q6(client):
-
-    return []
+    q = """
+    select count(*)
+    from `w4111-project-2-225304.dataset.GRAPH` as G1,
+    `w4111-project-2-225304.dataset.GRAPH` as G2,
+    `w4111-project-2-225304.dataset.GRAPH` as G3
+    where G1.scr = G3.dst and G1.dst = G2.scr and G2.dst = G3.scr
+    """
+    job = client.query(q)
+    results = job.result()
+    return list(results)
 
 # SQL query for Question 7. You must edit this funtion.
 # This function should return a list containing the twitter username and their corresponding PageRank.
@@ -212,7 +240,7 @@ def main():
     client = bigquery.Client.from_service_account_json(pathtocred)
 
     # funcs_to_test = [q1, q2, q3, q4, q5, q6, q7]
-    funcs_to_test = [q4]
+    funcs_to_test = [q6]
     # funcs_to_test = [testquery]
     for func in funcs_to_test:
         rows = func(client)
