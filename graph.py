@@ -59,14 +59,18 @@ def save_q3(q, client):
 # SQL query for Question 3. You must edit this funtion.
 # This function should return a list of source nodes and destination nodes in the graph.
 def q3(client):
-    # q = """
-    # select distinct twitter_username as scr, REGEXP_EXTRACT(text, r'@([^\s]*)') as dst
-    # from `w4111-columbia.graph.tweets`
-    # where REGEXP_CONTAINS(text, r'@[^\s]*');
-    # """
-    # save_q3(q, client)
+    execute(client,"drop table if exists dataset.GRAPH")
+    q = """
+    with twitter as(
+    select twitter_username
+    from `w4111-columbia.graph.tweets`)
+    select distinct twitter_username as scr, REGEXP_EXTRACT(text, r'@([^\s]*)') as dst
+    from `w4111-columbia.graph.tweets`
+    where REGEXP_EXTRACT(text, r'@([^\s]*)') in (select twitter_username from twitter)
+    """
+    save_q3(q, client)
     # Query results loaded to table /projects/w4111-project-2-225304/datasets/dataset/tables/GRAPH
-    # print("hello ")w4111-project-2-225304
+    print("hello ") #w4111-project-2-225304
 
     q_see = """select * from `w4111-project-2-225304.dataset.GRAPH` limit 5"""
     job = client.query(q_see)
@@ -131,25 +135,29 @@ def q6(client):
     results = job.result()
     return list(results)
 
+def execute(client, query):
+    job = client.query(query)
+    results = job.result()
+    print("============successfully=========")
+    print("{}".format(query))
+
 # SQL query for Question 7. You must edit this funtion.
 # This function should return a list containing the twitter username and their corresponding PageRank.
 def q7(client):
  # we need a 1. count table (count out degree of the node)
  # value_table (node, iteration, value)
  # src to dst
+    execute(client, "drop table if exists dataset.value_graph")
     q1 = """
-        CREATE TABLE IF NOT EXISTS dataset.value_graph (node string, value float64, iter int64);
+        CREATE TABLE dataset.value_graph (node string, value float64, iter int64);
         """
-    job = client.query(q1)
-    results = job.result()
-    print("successfully created table value graph")
+    execute(client, q1)
 
+    execute(client, "drop table if exists dataset.outdegree")
     q2 = """
     CREATE TABLE IF NOT EXISTS dataset.outdegree (scr string, cnt int64);
     """
-    job = client.query(q2)
-    results = job.result()
-    print("successfully created table outdegree")
+    execute(client, q2)
 
     q3 = """
     INSERT INTO dataset.outdegree (scr, cnt)
@@ -157,9 +165,7 @@ def q7(client):
     from dataset.GRAPH
     group by scr
     """
-    job = client.query(q3)
-    results = job.result()
-    print("successfully inserted table outdegree")
+    execute(client, q3)
     # intial value page rank
 
     q4 = """
@@ -177,9 +183,9 @@ def q7(client):
         q = """
         INSERT INTO dataset.value_graph(node, value, iter)
         select G.dst as node, sum(V.value/O.cnt), {curr_iter}
-        from datasets.value_graph as V, dataset.outdegree as O, dataset.GRAPH as G
+        from dataset.value_graph as V, dataset.outdegree as O, dataset.GRAPH as G
+        where (G.scr = V.node) and (V.iter = {pre_iter}) and (V.node = O.scr)
         group by G.dst
-        where G.scr = V.node and G.dst= G.scr and V.iter = {pre_iter} and V.node = O.node
         """.format(pre_iter = i, curr_iter = i + 1)
         job = client.query(q)
         results = job.result()
@@ -189,9 +195,11 @@ def q7(client):
     select node, value
     from dataset.value_graph
     where iter = 20
+    order by value desc
+    limit 100
     """
-    job = client.query(q4)
-    results = job.result()
+    job = client.query(q)
+    results = job.result(q)
     return list(results)
 
 
@@ -297,7 +305,7 @@ def main():
     client = bigquery.Client.from_service_account_json(pathtocred)
 
     # funcs_to_test = [q1, q2, q3, q4, q5, q6, q7]
-    funcs_to_test = [q6]
+    funcs_to_test = [q7]
     # funcs_to_test = [testquery]
     for func in funcs_to_test:
         rows = func(client)
