@@ -134,8 +134,65 @@ def q6(client):
 # SQL query for Question 7. You must edit this funtion.
 # This function should return a list containing the twitter username and their corresponding PageRank.
 def q7(client):
+ # we need a 1. count table (count out degree of the node)
+ # value_table (node, iteration, value)
+ # src to dst
+    q1 = """
+        CREATE TABLE IF NOT EXISTS dataset.value_graph (node string, value float64, iter int64);
+        """
+    job = client.query(q1)
+    results = job.result()
+    print("successfully created table value graph")
 
-    return []
+    q2 = """
+    CREATE TABLE IF NOT EXISTS dataset.outdegree (scr string, cnt int64);
+    """
+    job = client.query(q2)
+    results = job.result()
+    print("successfully created table outdegree")
+
+    q3 = """
+    INSERT INTO dataset.outdegree (scr, cnt)
+    select scr, count(*) as cnt
+    from dataset.GRAPH
+    group by scr
+    """
+    job = client.query(q3)
+    results = job.result()
+    print("successfully inserted table outdegree")
+    # intial value page rank
+
+    q4 = """
+    INSERT INTO dataset.value_graph(node, value, iter)
+    select scr, 1/count(*) over() as value, 0
+    from dataset.outdegree
+    """
+    job = client.query(q4)
+    results = job.result()
+    print("successfully initialized table value")
+
+    n_iter = 20
+    for i in range(n_iter):
+        print("Step %d..." % (i+1))
+        q = """
+        INSERT INTO dataset.value_graph(node, value, iter)
+        select G.dst as node, sum(V.value/O.cnt), {curr_iter}
+        from datasets.value_graph as V, dataset.outdegree as O, dataset.GRAPH as G
+        group by G.dst
+        where G.scr = V.node and G.dst= G.scr and V.iter = {pre_iter} and V.node = O.node
+        """.format(pre_iter = i, curr_iter = i + 1)
+        job = client.query(q)
+        results = job.result()
+
+    print("done!")
+    q = """
+    select node, value
+    from dataset.value_graph
+    where iter = 20
+    """
+    job = client.query(q4)
+    results = job.result()
+    return list(results)
 
 
 # Do not edit this function. This is for helping you develop your own iterative PageRank algorithm.
