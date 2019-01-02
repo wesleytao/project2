@@ -16,7 +16,10 @@ def testquery(client):
 # SQL query for Question 1. You must edit this funtion.
 # This function should return a list of IDs and the corresponding text.
 def q1(client):
-    q = """select idx, text from `w4111-columbia.graph.tweets` where text like '%www.twitch%' and text like '%going live%' """
+    q = """select id, text
+           from `w4111-columbia.graph.tweets`
+           where text like '%www.twitch%' and text like '%going live%'
+        """
     job = client.query(q)
     results = job.result()
     return list(results)
@@ -25,8 +28,9 @@ def q1(client):
 # This function should return a list of days and their corresponding average likes.
 def q2(client):
     q = """
-    select substr(create_time,1,3) as day, avg(like_num) as avg_likes from `w4111-columbia.graph.tweets` group by substr(create_time,1,3) limit 5
-
+    select substr(create_time,1,3) as day, avg(like_num) as avg_likes
+    from `w4111-columbia.graph.tweets`
+    group by substr(create_time,1,3)
     """
     job = client.query(q)
     results = job.result()
@@ -59,19 +63,15 @@ def save_q3(q, client):
 # SQL query for Question 3. You must edit this funtion.
 # This function should return a list of source nodes and destination nodes in the graph.
 def q3(client):
-    execute(client,"drop table if exists dataset.GRAPH")
+    execute(client, "drop table if exists dataset.GRAPH")
     q = """
-    with twitter as(
-    select twitter_username
-    from `w4111-columbia.graph.tweets`)
-    select distinct twitter_username as scr, REGEXP_EXTRACT(text, r'@([^\s]*)') as dst
+    select distinct twitter_username as scr, REGEXP_EXTRACT(text, r'@([^\s]+)') as dst
     from `w4111-columbia.graph.tweets`
-    where REGEXP_EXTRACT(text, r'@([^\s]*)') in (select twitter_username from twitter)
+    where REGEXP_CONTAINS(text, r'@([^\s]+)')
     """
     save_q3(q, client)
     # Query results loaded to table /projects/w4111-project-2-225304/datasets/dataset/tables/GRAPH
-    print("hello ") #w4111-project-2-225304
-
+    # print("hello ") #w4111-project-2-225304
     q_see = """select * from `w4111-project-2-225304.dataset.GRAPH` limit 5"""
     job = client.query(q_see)
     results = job.result()
@@ -81,14 +81,22 @@ def q3(client):
 # This function should return a list containing the twitter username of the users having the max indegree and max outdegree.
 def q4(client):
     q = """
-    with outdegree as (select scr, count(*) as cnt from dataset.GRAPH group by scr),
-    indegree as (select dst, count(*) as cnt from dataset.GRAPH group by dst)
-    select W1.twitter_username as max_indegree, W2.twitter_username as max_outdegree
-    from `w4111-columbia.graph.tweets` as W1 , `w4111-columbia.graph.tweets` as W2, indegree, outdegree
-    where W1.twitter_username = indegree.dst and
-    W2.twitter_username = outdegree.scr and
-    indegree.cnt = (select max(cnt) from indegree) and
-    outdegree.cnt = (select max(cnt) from outdegree)
+        WITH incoming AS (
+            SELECT dst, count(*) AS count
+            FROM `dataset.GRAPH`
+            GROUP BY dst
+            ORDER BY count(*) DESC
+            LIMIT 1
+        ),
+        outgoing AS (
+            SELECT scr, count(*) AS count
+            FROM `dataset.GRAPH`
+            GROUP BY scr
+            ORDER BY count(*) DESC
+            LIMIT 1
+        )
+        SELECT I.dst AS max_indegree, O.scr AS max_outdegree
+        FROM incoming I, outgoing O
     """
     job = client.query(q)
     results = job.result()
@@ -98,24 +106,44 @@ def q4(client):
 # This function should return a list containing value of the conditional probability.
 def q5(client):
     q = """
-    with indegree as (select dst, count(*) as cnt from `w4111-project-2-225304.dataset.GRAPH` group by dst),
-    avg_likes as (select twitter_username, avg(like_num) as avg_like from `w4111-columbia.graph.tweets` group by twitter_username),
-    total_user  as (
-    select indegree.dst as twitter_username,
+    with indegree as (
+        select dst, count(*) as cnt
+        from `w4111-project-2-225304.dataset.GRAPH`
+        group by dst
+        ),
+    avg_likes as (
+        select twitter_username,
+        avg(like_num) as avg_like
+        from `w4111-columbia.graph.tweets`
+        group by twitter_username
+        ),
+    total_user as (
+        select indegree.dst as twitter_username,
            avg_likes.avg_like as avg_like,
            indegree.cnt as cnt,
            avg(cnt) over() as t_avg_cnt,
            avg(avg_like) over() as t_avg_like
     from indegree join avg_likes on indegree.dst = avg_likes.twitter_username),
-    unpopular_user as (select twitter_username
-    from total_user
-    where cnt < t_avg_cnt and avg_like < t_avg_like),
-    popular_user as (select twitter_username from total_user where cnt > t_avg_cnt and avg_like > t_avg_like),
-    unpopular_user_tweet as (select `w4111-project-2-225304.dataset.GRAPH`.dst as dst, `w4111-project-2-225304.dataset.GRAPH`.scr as scr
-                            from `w4111-project-2-225304.dataset.GRAPH` join unpopular_user on `w4111-project-2-225304.dataset.GRAPH`.dst = unpopular_user.twitter_username),
-    unpopular_popular_cnt as (select count(*) from unpopular_user_tweet join popular_user on popular_user.twitter_username = unpopular_user_tweet.scr),
-    total_cnt as (select count(*) from unpopular_user_tweet)
-    select (select * from unpopular_popular_cnt)/ (select * from total_cnt) as popular_unpopular
+    unpopular_user as (
+        select distinct twitter_username
+        from total_user
+        where cnt < t_avg_cnt and avg_like < t_avg_like
+        ),
+    popular_user as (
+        select distinct twitter_username
+        from total_user where cnt > t_avg_cnt and avg_like > t_avg_like
+        ),
+    unpopular_user_tweet as (
+        select `w4111-project-2-225304.dataset.GRAPH`.dst as dst, `w4111-project-2-225304.dataset.GRAPH`.scr as scr
+        from `w4111-project-2-225304.dataset.GRAPH` join unpopular_user on `w4111-project-2-225304.dataset.GRAPH`.dst = unpopular_user.twitter_username
+        ),
+    uc as (
+       select count(*) as cnt
+       from unpopular_user_tweet join popular_user on popular_user.twitter_username = unpopular_user_tweet.scr),
+    tc as (
+       select count(*) as cnt
+       from unpopular_user_tweet)
+    select (select cnt from uc)/ (select cnt from tc) as popular_unpopular
     """
     job = client.query(q)
     results = job.result()
@@ -125,7 +153,7 @@ def q5(client):
 # This function should return a list containing the value for the number of triangles in the graph.
 def q6(client):
     q = """
-    select count(*)
+    select count(distinct(*))
     from `w4111-project-2-225304.dataset.GRAPH` as G1,
     `w4111-project-2-225304.dataset.GRAPH` as G2,
     `w4111-project-2-225304.dataset.GRAPH` as G3
@@ -270,9 +298,6 @@ def bfs(client, start, n_iter):
         # print(results)
 
 
-
-
-
 # Do not edit this function. You can use this function to see how to store tables using BigQuery.
 def save_table():
     client = bigquery.Client()
@@ -304,8 +329,8 @@ def main():
     pathtocred = "./credential/w4111-project-2-1c4ce5c2b73b.json"
     client = bigquery.Client.from_service_account_json(pathtocred)
 
-    # funcs_to_test = [q1, q2, q3, q4, q5, q6, q7]
-    funcs_to_test = [q7]
+    funcs_to_test = [q1, q2, q3, q4, q5, q6, q7]
+    # funcs_to_test = []
     # funcs_to_test = [testquery]
     for func in funcs_to_test:
         rows = func(client)
